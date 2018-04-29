@@ -3,6 +3,7 @@ package config
 import (
 	"log"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -26,9 +27,13 @@ func Err(err interface{}) {
 }
 
 // MeOrNot function to checked whether it's me or not
-func MeOrNot(ctx iris.Context, user string) bool {
+func MeOrNot(ctx iris.Context, user int) bool {
 	id, _ := AllSessions(ctx)
-	if id != user {
+	userId, err := strconv.Atoi(id)
+	if err != nil {
+		Err(err)
+	}
+	if userId != user {
 		return false
 	}
 	return true

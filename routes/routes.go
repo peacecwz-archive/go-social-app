@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"strconv"
+
 	CO "github.com/peacecwz/go-social-app/config"
 
 	"github.com/kataras/iris"
@@ -39,7 +41,8 @@ func loggedIn(ctx iris.Context, urlRedirect string) {
 		URL = urlRedirect
 	}
 	id, _ := CO.AllSessions(ctx)
-	if id == "" {
+	userId, err := strconv.Atoi(id)
+	if userId == 0 || err != nil {
 		ctx.Redirect(URL)
 	}
 }

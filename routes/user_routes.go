@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"time"
+
+	"github.com/peacecwz/go-social-app/models"
 
 	CO "github.com/peacecwz/go-social-app/config"
 
@@ -55,14 +56,9 @@ func UserSignup(ctx iris.Context) {
 	CO.Err(mailErr)
 
 	db := CO.DB()
-	fmt.Println("DB Error")
-	var (
-		userCount  int
-		emailCount int
-	)
-
-	db.Raw("SELECT COUNT(id) AS userCount FROM users WHERE username=?", username).Row().Scan(&userCount)
-	db.Raw("SELECT COUNT(id) AS emailCount FROM users WHERE email=?", email).Row().Scan(&emailCount)
+	var userCount int
+	model := db.Model(&(models.User{}))
+	model.Where("username=? OR email=?", username, email).Count(&userCount)
 
 	if username == "" || email == "" || password == "" || passwordAgain == "" {
 		resp["mssg"] = "Some values are missing!!"
@@ -73,18 +69,15 @@ func UserSignup(ctx iris.Context) {
 	} else if password != passwordAgain {
 		resp["mssg"] = "Passwords don't match"
 	} else if userCount > 0 {
-		resp["mssg"] = "Username already exists!!"
-	} else if emailCount > 0 {
-		resp["mssg"] = "Email already exists!!"
+		resp["mssg"] = "Username or Email already exists!!"
 	} else {
+		user := &(models.User{
+			Username: username,
+			Email:    email,
+			Password: string(hash(password))})
+		model.Create(user)
 
-		result := db.Exec("INSERT INTO users(username, email, password, joined) VALUES (?, ?, ?, ?)", username, email, hash(password), time.Now())
-
-		CO.Err(result.Error)
-		fmt.Println(result)
-		var insertID int64
-		result.Select("id").Last(&insertID)
-		insStr := strconv.FormatInt(insertID, 10)
+		insStr := strconv.FormatUint(uint64(user.ID), 10)
 
 		dir, _ := os.Getwd()
 		userPath := dir + "/public/users/" + insStr
@@ -117,29 +110,24 @@ func UserLogin(ctx iris.Context) {
 	rpassword := ctx.PostValueTrim("password")
 
 	db := CO.DB()
-	var (
-		userCount int
-		id        int
-		username  string
-		password  string
-	)
 
-	db.Raw("SELECT COUNT(id) AS userCount, id, username, password FROM users WHERE username=?", rusername).Row().Scan(&userCount, &id, &username, &password)
+	userModel := db.Model(&(models.User{}))
+	var user models.User
+	userModel.Where("username = ?", rusername).Find(&user)
 
-	encErr := bcrypt.CompareHashAndPassword([]byte(password), []byte(rpassword))
+	encErr := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(rpassword))
 
 	if rusername == "" || rpassword == "" {
 		resp["mssg"] = "Some values are missing!!"
-	} else if userCount == 0 {
+	} else if user.ID == 0 {
 		resp["mssg"] = "Invalid username!!"
 	} else if encErr != nil {
 		resp["mssg"] = "Invalid password!!"
 	} else {
 		session := CO.GetSession(ctx)
-		session.Set("id", strconv.Itoa(id))
-		session.Set("username", username)
-
-		resp["mssg"] = "Hello, " + username + "!!"
+		session.Set("id", strconv.Itoa(int(user.ID)))
+		session.Set("username", user.Username)
+		resp["mssg"] = "Hello, " + user.Username + "!!"
 		resp["success"] = true
 	}
 	json(ctx, resp)

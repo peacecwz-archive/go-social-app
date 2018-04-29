@@ -1,8 +1,10 @@
 package routes
 
 import (
+	"fmt"
 	"strconv"
-	"time"
+
+	"github.com/peacecwz/go-social-app/models"
 
 	CO "github.com/peacecwz/go-social-app/config"
 
@@ -13,37 +15,42 @@ import (
 func Index(ctx iris.Context) {
 	loggedIn(ctx, "/welcome")
 
-	id, _ := CO.AllSessions(ctx)
-	db := CO.DB()
-	var (
-		postID    int
-		title     string
-		content   string
-		createdBy int
-		createdAt string
-	)
-	feeds := []interface{}{}
-	rows, qErr := db.Raw("SELECT posts.postID, posts.title, posts.content, posts.createdBy, posts.createdAt from posts, follow WHERE follow.followBy=? AND follow.followTo = posts.createdBy ORDER BY posts.postID DESC", id).Rows()
-	CO.Err(qErr)
+	sessionId, _ := CO.AllSessions(ctx)
+	if sessionId != "" {
 
-	for rows.Next() {
-		rows.Scan(&postID, &title, &content, &createdBy, &createdAt)
-		feed := map[string]interface{}{
-			"postID":    postID,
-			"title":     title,
-			"content":   content,
-			"createdBy": createdBy,
-			"createdAt": createdAt,
+		id, err := strconv.ParseInt(sessionId, 10, 64)
+		CO.Err(err)
+		db := CO.DB()
+		posts := []interface{}{}
+		rows, qErr := db.Raw("SELECT posts.\"id\", posts.\"title\", posts.\"content\", posts.\"created_by\", posts.\"created_at\" from \"public\".posts, \"public\".follows WHERE follows.\"follow_by\"=? AND follows.\"follow_to\" = posts.\"created_by\" ORDER BY posts.\"id\" DESC", id).Rows()
+		CO.Err(qErr)
+		var (
+			postId     int
+			title      string
+			content    string
+			created_by int
+			created_at string
+		)
+		for rows.Next() {
+			rows.Scan(&postId, &title, &content, &created_by, &created_at)
+			post := map[string]interface{}{
+				"postId":     postId,
+				"title":      title,
+				"content":    content,
+				"created_by": created_by,
+				"created_at": created_at,
+			}
+			posts = append(posts, post)
 		}
-		feeds = append(feeds, feed)
+		fmt.Println(posts)
+		renderTemplate(ctx, "index", iris.Map{
+			"title":   "Home",
+			"session": ses(ctx),
+			"posts":   posts,
+			"GET":     CO.Get,
+		})
 	}
 
-	renderTemplate(ctx, "index", iris.Map{
-		"title":   "Home",
-		"session": ses(ctx),
-		"posts":   feeds,
-		"GET":     CO.Get,
-	})
 }
 
 // Welcome route
@@ -66,8 +73,15 @@ func NotFound(ctx iris.Context) {
 func Profile(ctx iris.Context) {
 	loggedIn(ctx, "")
 
-	user := ctx.Params().Get("id")
+	userId, err := strconv.Atoi(ctx.Params().Get("id"))
+	if err != nil {
+		CO.Err(err)
+	}
 	sesID, _ := CO.AllSessions(ctx)
+	currentUserId, err := strconv.Atoi(sesID)
+	if err != nil {
+		CO.Err(err)
+	}
 	db := CO.DB()
 
 	// VARS FOR USER DETAILS
@@ -95,8 +109,8 @@ func Profile(ctx iris.Context) {
 		pViews     int // for profile views
 	)
 
-	me := CO.MeOrNot(ctx, user) // Check if its me or not
-	var noMssg string           // Mssg to be displayed when user has no posts
+	me := CO.MeOrNot(ctx, currentUserId) // Check if its me or not
+	var noMssg string                    // Mssg to be displayed when user has no posts
 
 	if me == true {
 		noMssg = "You have no posts. Go ahead and create one!!"
@@ -105,23 +119,26 @@ func Profile(ctx iris.Context) {
 
 		// VIEW PROFILE
 		if sesID != "" {
-			result := db.Exec("INSERT INTO profile_views(viewBy, viewTo, viewTime) VALUES(?, ?, ?)", sesID, user, time.Now())
+			profileViewsModel := db.Model(&(models.ProfileView{}))
+			profileViewsModel.Create(&(models.ProfileView{
+				ViewBy: currentUserId,
+				ViewTo: userId}))
+			db.Model(&(models.ProfileView{})).Create(&(models.ProfileView{
+				ViewBy: currentUserId,
+				ViewTo: userId}))
 
-			CO.Err(result.Error)
 		}
 
 	}
 
 	// USER DETAILS
-	db.Raw("SELECT COUNT(id) AS userCount, id AS userID, username, email, bio FROM users WHERE id=?", user).Row().Scan(&userCount, &userID, &username, &email, &bio)
+	db.Raw("SELECT COUNT(id) AS userCount, id AS userID, username, email, bio FROM users WHERE id=?", userId).Row().Scan(&userCount, &userID, &username, &email, &bio)
 
 	invalid(ctx, userCount)
 
 	// POSTS
-	result := db.Raw("SELECT * FROM posts WHERE createdBy=? ORDER BY postID DESC")
-	CO.Err(result.Error)
-	rows, gErr := result.Rows()
-	CO.Err(gErr)
+	rows, err := db.Model(&(models.Post{})).Where("created_by = ?", userId).Rows()
+	CO.Err(err)
 
 	for rows.Next() {
 		rows.Scan(&postID, &title, &content, &createdBy, &createdAt)
@@ -134,12 +151,9 @@ func Profile(ctx iris.Context) {
 		}
 		posts = append(posts, post)
 	}
-	db.Table("follow").Where("followTo=?", user).Select("followID").Count(&followers)
-	db.Table("follow").Where("followBy=?", user).Select("followID").Count(&followings)
-	db.Table("profile_views").Where("viewTo=?", user).Select("viewID").Count(&pViews)
-	//db.Raw("SELECT COUNT() AS followers FROM follow WHERE ").Scan()                                         // FOLLOWERS
-	//db.QueryRow("SELECT COUNT(followID) AS followers FROM follow WHERE followBy=?", user).Scan() // FOLLOWINGS
-	//db.QueryRow("SELECT COUNT() AS pViews FROM  WHERE ", user).Scan() // PROFILE VIEWS
+	db.Model(&(models.Follow{})).Where("follow_to=?", userId).Select("id").Count(&followers)
+	db.Model(&(models.Follow{})).Where("follow_by=?", userId).Select("id").Count(&followings)
+	db.Model(&(models.ProfileView{})).Where("view_to=?", userId).Select("id").Count(&pViews)
 
 	renderTemplate(ctx, "profile", iris.Map{
 		"title":   "@" + username,
@@ -166,23 +180,18 @@ func Explore(ctx iris.Context) {
 	loggedIn(ctx, "")
 	user, _ := CO.AllSessions(ctx)
 	db := CO.DB()
-	var (
-		id       int
-		username string
-		email    string
-	)
 	explore := []interface{}{}
-
-	result := db.Raw("SELECT id, username, email FROM users WHERE id <> ? ORDER BY RAND() LIMIT 10", user)
-	rows, err := result.Rows()
+	usersModel := db.Model(&(models.User{}))
+	rows, err := usersModel.Where("id <> ?", user).Select("id, username, email").Limit(10).Rows()
 	CO.Err(err)
 
 	for rows.Next() {
-		rows.Scan(&id, &username, &email)
+		var user models.User
+		rows.Scan(&user)
 		exp := map[string]interface{}{
-			"id":       id,
-			"username": username,
-			"email":    email,
+			"id":       user.ID,
+			"username": user.Username,
+			"email":    user.Email,
 		}
 		explore = append(explore, exp)
 	}
@@ -212,35 +221,28 @@ func ViewPost(ctx iris.Context) {
 
 	param := ctx.Params().Get("id")
 	db := CO.DB()
-	var (
-		postCount int
-		postID    int
-		title     string
-		content   string
-		createdBy int
-		createdAt string
-	)
+	var post models.Post
+	postsModel := db.Model(&(models.Post{}))
+	likesModel := db.Model(&(models.Like{}))
+	postsModel.Where("id = ?", param).First(&post)
+	if post.ID == 0 {
+		invalid(ctx, 0)
+	}
 	var likesCount int
-
-	// post details
-	db.Table("posts").Where("postID=?", param).Select("COUNT(postID) AS postCount, postID, title, content, createdBy, createdAt").Row().Scan(&postCount, &postID, &title, &content, &createdBy, &createdAt)
-	//db.QueryRow("SELECT  FROM  WHERE ")
-	invalid(ctx, postCount)
-
+	likesModel.Where("post_id = ?", param).Count(&likesCount)
 	// likes
-	db.Table("likes").Where("postID=?", param).Count(&likesCount)
-
+	//db.Table("likes").Where("postID=?", param).Count()
 	renderTemplate(ctx, "view_post", iris.Map{
 		"title":   "View Post",
 		"session": ses(ctx),
 		"post": iris.Map{
-			"postID":    postID,
-			"title":     title,
-			"content":   content,
-			"createdBy": createdBy,
-			"createdAt": createdAt,
+			"postID":    post.ID,
+			"title":     post.Title,
+			"content":   post.Content,
+			"createdBy": post.CreatedBy,
+			"createdAt": post.CreatedAt,
 		},
-		"postCreatedBy": strconv.Itoa(createdBy),
+		"postCreatedBy": strconv.Itoa(post.CreatedBy),
 		"lon":           CO.LikedOrNot,
 		"likes":         likesCount,
 	})
@@ -250,24 +252,22 @@ func ViewPost(ctx iris.Context) {
 func EditPost(ctx iris.Context) {
 	loggedIn(ctx, "")
 
-	post := ctx.Params().Get("id")
+	postID := ctx.Params().Get("id")
 	db := CO.DB()
-	var (
-		postCount int
-		postID    int
-		title     string
-		content   string
-	)
-	db.Raw("SELECT COUNT(postID) AS postCount, postID, title, content FROM posts WHERE postID=?", post).Row().Scan(&postCount, &postID, &title, &content)
-	invalid(ctx, postCount)
+	postsModel := db.Model(&(models.Post{}))
+	var post models.Post
+	postsModel.Where("id = ?", postID).Select(&post)
+	if post.ID == 0 {
+		invalid(ctx, 0)
+	}
 
 	renderTemplate(ctx, "edit_post", iris.Map{
 		"title":   "Edit Post",
 		"session": ses(ctx),
 		"post": iris.Map{
 			"postID":  postID,
-			"title":   title,
-			"content": content,
+			"title":   post.Title,
+			"content": post.Content,
 		},
 	})
 }
@@ -297,17 +297,17 @@ func EditProfile(ctx iris.Context) {
 func Followers(ctx iris.Context) {
 	loggedIn(ctx, "")
 
-	user := ctx.Params().Get("id")
+	user, err := strconv.Atoi(ctx.Params().Get("id"))
+	if err != nil {
+		CO.Err(err)
+	}
 	username := CO.Get(user, "username")
 	db := CO.DB()
 	var followBy int
 	followers := []interface{}{}
 	me := CO.MeOrNot(ctx, user)
 	var noMssg string
-
-	result := db.Raw("SELECT followBy FROM follow WHERE followTo=? ORDER BY followID DESC", user)
-	CO.Err(result.Error)
-	rows, err := result.Rows()
+	rows, err := db.Model(&(models.Follow{})).Where("follow_to=?", user).Order("id", true).Select("follow_by").Rows()
 	CO.Err(err)
 	for rows.Next() {
 		rows.Scan(&followBy)
@@ -338,7 +338,10 @@ func Followers(ctx iris.Context) {
 func Followings(ctx iris.Context) {
 	loggedIn(ctx, "")
 
-	user := ctx.Params().Get("id")
+	user, err := strconv.Atoi(ctx.Params().Get("id"))
+	if err != nil {
+		CO.Err(err)
+	}
 	username := CO.Get(user, "username")
 	db := CO.DB()
 	var followTo int
@@ -382,20 +385,18 @@ func Likes(ctx iris.Context) {
 	post := ctx.Params().Get("id")
 	db := CO.DB()
 	var postCount int
-	var likeBy int
+	var like_by int
 	likes := []interface{}{}
-
-	db.Raw("SELECT COUNT(postID) AS postCount FROM posts WHERE postID=?", post).Row().Scan(&postCount)
+	db.Model(&(models.Post{})).Where("post_id=?", post).Count(&postCount)
 	invalid(ctx, postCount)
 
-	result := db.Raw("SELECT likeBy FROM likes WHERE postID=?", post)
-	rows, err := result.Rows()
+	rows, err := db.Model(&(models.Like{})).Where("post_id=?", post).Select("like_by").Rows()
 	CO.Err(err)
 
 	for rows.Next() {
-		rows.Scan(&likeBy)
+		rows.Scan(&like_by)
 		l := map[string]interface{}{
-			"likeBy": likeBy,
+			"like_by": like_by,
 		}
 		likes = append(likes, l)
 	}

@@ -3,12 +3,12 @@
 {{ $GET := .GET }}
 
 {{ range $post := .posts }}
-  <a href="/view_post/{{ $post.postID }}" class="note">
+  <a href="/view_post/{{ $post.postId }}" class="note">
     <div class="note_header common_header">
-      <img src="/users/{{ $post.createdBy }}/avatar.png" alt="" srcset="">
+      <img src="/users/{{ $post.created_by }}/avatar.png" alt="" srcset="">
       <div class="note_h_left">
-        <span class="note_username">{{ call $GET $post.createdBy "username" }}</span>
-        <span class='note_time'>{{ $post.createdAt }}</span>
+        <span class="note_username">{{ call $GET $post.created_by "username" }}</span>
+        <span class='note_time'>{{ $post.created_at }}</span>
       </div>
     </div>
     <div class="note_title">

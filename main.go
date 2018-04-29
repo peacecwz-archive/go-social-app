@@ -1,16 +1,16 @@
 package main
 
 import (
-	"fmt"
 	"os"
-
-	R "github.com/peacecwz/go-social-app/routes"
 
 	"github.com/kataras/iris"
 	"github.com/kataras/iris/middleware/recover"
+	CO "github.com/peacecwz/go-social-app/config"
+	R "github.com/peacecwz/go-social-app/routes"
 )
 
 func main() {
+	CO.InitDB()
 	app := iris.New()
 	app.Use(recover.New())
 
@@ -65,7 +65,6 @@ func main() {
 		api.Post("/unlike", R.Unlike)
 		api.Post("/deactivate-account", R.DeactivateAcc)
 	}
-	fmt.Println("App")
 
 	app.Run(iris.Addr(os.Getenv("PORT")))
 }

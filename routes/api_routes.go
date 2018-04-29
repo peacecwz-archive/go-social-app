@@ -2,31 +2,31 @@ package routes
 
 import (
 	"os"
-	"time"
-
-	CO "github.com/peacecwz/go-social-app/config"
+	"strconv"
 
 	"github.com/badoux/checkmail"
 	"github.com/kataras/iris"
+	CO "github.com/peacecwz/go-social-app/config"
+	models "github.com/peacecwz/go-social-app/models"
 )
 
 // CreateNewPost route
 func CreateNewPost(ctx iris.Context) {
-
-	title := ctx.PostValueTrim("title")
-	content := ctx.PostValueTrim("content")
-	id, _ := CO.AllSessions(ctx)
+	sessionId, _ := CO.AllSessions(ctx)
+	id, err := strconv.Atoi(sessionId)
+	if err != nil {
+		panic(err)
+	}
+	post := models.Post{
+		Title:     ctx.PostValueTrim("title"),
+		Content:   ctx.PostValueTrim("content"),
+		CreatedBy: id}
 
 	db := CO.DB()
-
-	rs := db.Exec("INSERT INTO posts(title, content, createdBy, createdAt) VALUES (?, ?, ?, ?)", title, content, id, time.Now())
-	CO.Err(rs.Error)
-	var insertID int
-
-	rs.Select("postID").Last(&insertID)
+	db.Create(&post)
 
 	resp := map[string]interface{}{
-		"postID": insertID,
+		"postID": post.ID,
 		"mssg":   "Post Created!!",
 	}
 	json(ctx, resp)
@@ -36,9 +36,7 @@ func CreateNewPost(ctx iris.Context) {
 func DeletePost(ctx iris.Context) {
 	post := ctx.FormValue("post")
 	db := CO.DB()
-
-	rs := db.Exec("DELETE FROM posts WHERE postID=?", post)
-	CO.Err(rs.Error)
+	db.Where("post_id=?", post).Delete(&(models.Post{}))
 
 	json(ctx, map[string]interface{}{
 		"mssg": "Post Deleted!!",
@@ -116,29 +114,39 @@ func ChangeAvatar(ctx iris.Context) {
 
 // Follow route
 func Follow(ctx iris.Context) {
-	id, _ := CO.AllSessions(ctx)
+	sessionId, _ := CO.AllSessions(ctx)
+	id, err := strconv.Atoi(sessionId)
+	if err != nil {
+		CO.Err(err)
+	}
 	user := ctx.PostValue("user")
-	username := CO.Get(user, "username")
-
+	userId, err := strconv.Atoi(user)
 	db := CO.DB()
-	result := db.Exec("INSERT INTO follow(followBy, followTo, followTime) VALUES(?, ?, ?)", id, user, time.Now())
-
-	CO.Err(result.Error)
+	usersModel := db.Model(&(models.User{}))
+	followsModel := db.Model(&(models.Follow{}))
+	var currentUser, followerUser models.User
+	usersModel.Where("id = ?", id).First(&currentUser)
+	usersModel.Where("id = ?", userId).First(&followerUser)
+	followsModel.Create(&(models.Follow{
+		FollowBy: int(currentUser.ID),
+		FollowTo: int(followerUser.ID)}))
 
 	json(ctx, iris.Map{
-		"mssg": "Followed " + username + "!!",
+		"mssg": "Followed " + currentUser.Username + "!!",
 	})
 }
 
 // Unfollow route
 func Unfollow(ctx iris.Context) {
 	id, _ := CO.AllSessions(ctx)
-	user := ctx.PostValue("user")
-	username := CO.Get(user, "username")
+	userId, err := strconv.Atoi(ctx.PostValue("user"))
+	if err != nil {
+		CO.Err(err)
+	}
+	username := CO.Get(userId, "username")
 
 	db := CO.DB()
-	result := db.Exec("DELETE FROM follow WHERE followBy=? AND followTo=?", id, user)
-	CO.Err(result.Error)
+	db.Where("follow_by=? AND follow_to=?", id, userId).Delete(&(models.Follow{}))
 
 	json(ctx, iris.Map{
 		"mssg": "Unfollowed " + username + "!!",
@@ -148,11 +156,20 @@ func Unfollow(ctx iris.Context) {
 // Like post route
 func Like(ctx iris.Context) {
 	post := ctx.PostValue("post")
+	postId, err := strconv.Atoi(post)
+	if err != nil {
+		CO.Err(err)
+	}
 	db := CO.DB()
-	id, _ := CO.AllSessions(ctx)
-
-	result := db.Exec("INSERT INTO likes(postID, likeBy, likeTime) VALUES (?, ?, ?)", post, id, time.Now())
-	CO.Err(result.Error)
+	sessionId, _ := CO.AllSessions(ctx)
+	id, err := strconv.Atoi(sessionId)
+	if err != nil {
+		CO.Err(err)
+	}
+	likesModel := db.Model(&(models.Like{}))
+	likesModel.Create(&(models.Like{
+		PostID: postId,
+		LikeBy: id}))
 
 	json(ctx, iris.Map{
 		"mssg": "Post Liked!!",
@@ -164,9 +181,8 @@ func Unlike(ctx iris.Context) {
 	post := ctx.PostValue("post")
 	id, _ := CO.AllSessions(ctx)
 	db := CO.DB()
-
-	result := db.Exec("DELETE FROM likes WHERE postID=? AND likeBy=?", post, id)
-	CO.Err(result.Error)
+	db.Where("post_id=? AND like_by=?", post, id).Delete(&(models.Like{}))
+	//CO.Err(result.Error)
 
 	json(ctx, iris.Map{
 		"mssg": "Post Unliked!!",
@@ -179,21 +195,19 @@ func DeactivateAcc(ctx iris.Context) {
 	id, _ := CO.AllSessions(ctx)
 	db := CO.DB()
 	var postID int
-
-	db.Exec("DELETE FROM profile_views WHERE viewBy=?", id)
-	db.Exec("DELETE FROM profile_views WHERE viewTo=?", id)
-	db.Exec("DELETE FROM follow WHERE followBy=?", id)
-	db.Exec("DELETE FROM follow WHERE followTo=?", id)
-	db.Exec("DELETE FROM likes WHERE likeBy=?", id)
-	rows, err := db.Table("posts").Where("createdBy=?", id).Select("postID").Rows()
+	db.Where("view_by=?", id).Delete(&(models.ProfileView{}))
+	db.Where("view_to=?", id).Delete(&(models.ProfileView{}))
+	db.Where("follow_to=?", id).Delete(&(models.Follow{}))
+	db.Where("follow_by=?", id).Delete(&(models.Follow{}))
+	db.Where("like_by=?", id).Delete(&(models.Like{}))
+	rows, err := db.Model(&(models.Post{})).Where("created_by=?", id).Select("id").Rows()
 	CO.Err(err)
 	for rows.Next() {
 		rows.Scan(&postID)
-		db.Exec("DELETE FROM likes WHERE postID=?", postID)
+		db.Where("post_id=?", postID).Delete(&(models.Like{}))
 	}
-
-	db.Exec("DELETE FROM posts WHERE createdBy=?", id)
-	db.Exec("DELETE FROM users WHERE id=?", id)
+	db.Where("created_by=?", id).Delete(&(models.Post{}))
+	db.Where("id=?", id).Delete(&(models.User{}))
 
 	dir, _ := os.Getwd()
 	userPath := dir + "/public/users/" + id
