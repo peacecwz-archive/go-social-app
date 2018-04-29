@@ -11,12 +11,13 @@ import (
 
 func InitDB() {
 	db := DB()
-
-	db.AutoMigrate(&(models.User{}))
-	db.AutoMigrate(&(models.Post{}))
-	db.AutoMigrate(&(models.ProfileView{}))
-	db.AutoMigrate(&(models.Like{}))
-	db.AutoMigrate(&(models.Follow{}))
+	if os.Getenv("MIGRATION") == "AUTO" {
+		db.AutoMigrate(&(models.User{}))
+		db.AutoMigrate(&(models.Post{}))
+		db.AutoMigrate(&(models.ProfileView{}))
+		db.AutoMigrate(&(models.Like{}))
+		db.AutoMigrate(&(models.Follow{}))
+	}
 }
 
 // DB function
