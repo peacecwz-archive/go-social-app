@@ -1,12 +1,8 @@
 package models
 
-import (
-	"github.com/jinzhu/gorm"
-)
-
 type Post struct {
-	gorm.Model
-	Title     string
-	Content   string
-	CreatedBy int
+	BaseModel
+	Title     string `gorm:"column:Title"`
+	Content   string `gorm:"column:Content"`
+	CreatedBy int    `gorm:"column:CreatedBy"`
 }

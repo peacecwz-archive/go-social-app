@@ -1,11 +1,7 @@
 package models
 
-import (
-	"github.com/jinzhu/gorm"
-)
-
 type ProfileView struct {
-	gorm.Model
-	ViewBy int
-	ViewTo int
+	BaseModel
+	ViewBy int `gorm:"column:ViewBy"`
+	ViewTo int `gorm:"column:ViewTo"`
 }

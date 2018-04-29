@@ -66,5 +66,5 @@ func main() {
 		api.Post("/deactivate-account", R.DeactivateAcc)
 	}
 
-	app.Run(iris.Addr(os.Getenv("PORT")))
+	app.Run(iris.Addr(":" + os.Getenv("PORT")))
 }

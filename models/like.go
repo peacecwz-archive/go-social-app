@@ -1,11 +1,7 @@
 package models
 
-import (
-	"github.com/jinzhu/gorm"
-)
-
 type Like struct {
-	gorm.Model
-	PostID int
-	LikeBy int
+	BaseModel
+	PostID int `gorm:"column:PostID"`
+	LikeBy int `gorm:"column:LikeBy"`
 }
