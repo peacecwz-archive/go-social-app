@@ -6,3 +6,7 @@ type Post struct {
 	Content   string `gorm:"column:Content"`
 	CreatedBy int    `gorm:"column:CreatedBy"`
 }
+
+func (Post) TableName() string {
+	return "Posts"
+}

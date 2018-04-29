@@ -33,5 +33,9 @@ func DB() *gorm.DB {
 	if err != nil {
 		panic(err)
 	}
-	return db.Debug()
+	if os.Getenv("MODE") == "DEV" {
+		return db.Debug()
+	}
+
+	return db
 }

@@ -5,3 +5,7 @@ type Follow struct {
 	FollowBy int `gorm:"column:FollowBy"`
 	FollowTo int `gorm:"column:FollowTo"`
 }
+
+func (Follow) TableName() string {
+	return "Follows"
+}

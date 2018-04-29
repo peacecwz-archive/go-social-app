@@ -5,3 +5,7 @@ type Like struct {
 	PostID int `gorm:"column:PostID"`
 	LikeBy int `gorm:"column:LikeBy"`
 }
+
+func (Like) TableName() string {
+	return "Likes"
+}
